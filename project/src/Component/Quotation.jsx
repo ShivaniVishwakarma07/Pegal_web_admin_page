@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { API_URL } from "../api";
 import {
   Plus,
   Trash2,
@@ -38,7 +39,7 @@ const TERMS = [
   "Work begins after written acceptance and receipt of the advance payment.",
 ];
 
-const API = "http://localhost:5000/api";
+const API = `${API_URL}/api`;
 
 const inr = (v) =>
   new Intl.NumberFormat("en-IN", {

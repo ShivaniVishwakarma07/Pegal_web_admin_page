@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { API_URL } from "../api";
 import {
   Search,
   Users,
@@ -525,9 +526,9 @@ export default function Clients() {
 
         const [clientsResponse, invoicesResponse, expensesResponse] =
           await Promise.all([
-            fetch("http://localhost:5000/api/clients"),
-            fetch("http://localhost:5000/api/invoices"),
-            fetch("http://localhost:5000/api/expenses"),
+            fetch(`${API_URL}/api/clients`),
+            fetch(`${API_URL}/api/invoices`),
+            fetch(`${API_URL}/api/expenses`),
           ]);
 
         if (!clientsResponse.ok) {
@@ -567,8 +568,8 @@ export default function Clients() {
     const refresh = async () => {
       try {
         const [invoicesResponse, expensesResponse] = await Promise.all([
-          fetch("http://localhost:5000/api/invoices"),
-          fetch("http://localhost:5000/api/expenses"),
+          fetch(`${API_URL}/api/invoices`),
+          fetch(`${API_URL}/api/expenses`),
         ]);
 
         if (invoicesResponse.ok) {

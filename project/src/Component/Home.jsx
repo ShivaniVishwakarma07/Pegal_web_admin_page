@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_URL } from "../api";
 import {
   ReceiptText,
   FileText,
@@ -119,9 +120,9 @@ export default function Home() {
 
       const [invoiceResponse, expenseResponse, hostingResponse] =
         await Promise.all([
-          fetch("http://localhost:5000/api/invoices"),
-          fetch("http://localhost:5000/api/expenses"),
-          fetch("http://localhost:5000/api/hosting"),
+          fetch(`${API_URL}/api/invoices`),
+          fetch(`${API_URL}/api/expenses`),
+          fetch(`${API_URL}/api/hosting`),
         ]);
 
       const invoiceData = invoiceResponse.ok

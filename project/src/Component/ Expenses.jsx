@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { API_URL } from "../api";
 import {
   Plus,
   Search,
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 
 //const STORE = "pegal_expenses";
-const API = "http://localhost:5000/api/expenses";
+const API = `${API_URL}/api/expenses`;
 
 const CATEGORIES = {
   Rent: { chip: "bg-violet-50 text-violet-700", bar: "bg-violet-500" },
@@ -130,8 +131,8 @@ function ExpenseForm({ initial, onSave, onClose }) {
         setLoadingRelations(true);
 
         const [clientsResponse, projectsResponse] = await Promise.all([
-          fetch("http://localhost:5000/api/clients"),
-          fetch("http://localhost:5000/api/projects"),
+          fetch(`${API_URL}/api/clients`),
+          fetch(`${API_URL}/api/projects`),
         ]);
 
         if (!clientsResponse.ok || !projectsResponse.ok) {

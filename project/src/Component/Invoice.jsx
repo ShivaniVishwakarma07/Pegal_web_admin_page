@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { API_URL } from "../api";
 import {
   Plus,
   Trash2,
@@ -190,7 +191,7 @@ export default function Invoice({ onSave }) {
   useEffect(() => {
     const loadClients = async () => {
       try {
-        const response = await fetch("http://localhost:5000/api/clients");
+        const response = await fetch(`${API_URL}/api/clients`);
 
         if (!response.ok) {
           throw new Error("Failed to load registered clients");
@@ -263,7 +264,7 @@ export default function Invoice({ onSave }) {
 
     const generateInvoiceNumber = async () => {
       try {
-        const response = await fetch("http://localhost:5000/api/invoices");
+        const response = await fetch(`${API_URL}/api/invoices`);
 
         if (!response.ok) {
           throw new Error("Failed to fetch invoices");
@@ -290,7 +291,7 @@ export default function Invoice({ onSave }) {
     };
 
     try {
-      const response = await fetch("http://localhost:5000/api/invoices", {
+      const response = await fetch(`${API_URL}/api/invoices`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -330,7 +331,7 @@ export default function Invoice({ onSave }) {
 
     try {
       const response = await fetch(
-        `http://localhost:5000/api/invoices/${savedInvoiceId}/refund`,
+  `${API_URL}/api/invoices/${savedInvoiceId}/refund`,
         {
           method: "POST",
           headers: {

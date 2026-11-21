@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { API_URL } from "../api";
 import {
   Plus,
   Search,
@@ -17,7 +18,7 @@ import {
   Mail,
 } from "lucide-react";
 
-const API = "http://localhost:5000/api";
+const API = `${API_URL}/api`;
 const GST_RATE = 18;
 
 const TYPES = {
