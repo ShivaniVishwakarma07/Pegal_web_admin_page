@@ -142,6 +142,7 @@ function Stat({ title, value, note, icon: Icon, tone }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-slate-500">{title}</p>
+
           <p className="mt-2.5 truncate text-xl font-semibold tracking-tight text-slate-900 xl:text-2xl">
             {value}
           </p>
@@ -237,13 +238,13 @@ function ServiceForm({ initial, clients, onSave, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/40 p-4 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-3 backdrop-blur-sm sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Service form"
     >
-      <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
-        <div className="mb-5 flex items-center justify-between">
+      <div className="max-h-[calc(100vh-1.5rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:p-5">
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold tracking-tight">
             {f.id ? "Edit service" : "Add service"}
           </h2>
@@ -258,7 +259,7 @@ function ServiceForm({ initial, clients, onSave, onClose }) {
         </div>
 
         <div
-          className="mb-5 grid grid-cols-2 gap-2"
+          className="mb-4 grid grid-cols-2 gap-2"
           role="group"
           aria-label="Service type"
         >
@@ -291,7 +292,7 @@ function ServiceForm({ initial, clients, onSave, onClose }) {
           ))}
         </datalist>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Client *">
             <input
               list="client-list"
@@ -521,14 +522,14 @@ function ServiceForm({ initial, clients, onSave, onClose }) {
 
         {err && (
           <p
-            className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700"
+            className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700"
             role="alert"
           >
             {err}
           </p>
         )}
 
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={onClose}
             className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
@@ -574,6 +575,7 @@ export default function Hosting() {
 
         if (!hostingRes.ok || !clientsRes.ok) {
           const hostingError = !hostingRes.ok ? await hostingRes.text() : "";
+
           const clientsError = !clientsRes.ok ? await clientsRes.text() : "";
 
           throw new Error(
@@ -647,6 +649,7 @@ export default function Hosting() {
 
   const soon = items.filter((i) => {
     const l = daysLeft(i.due);
+
     return l >= 0 && l <= 30;
   });
 
@@ -793,7 +796,9 @@ export default function Hosting() {
 
     if (
       !window.confirm(
-        `Renew ${s.domain} until ${fmtDate(next)} and create an unpaid invoice for ${inr(gross(s))}?`,
+        `Renew ${s.domain} until ${fmtDate(
+          next,
+        )} and create an unpaid invoice for ${inr(gross(s))}?`,
       )
     ) {
       return;
@@ -821,7 +826,9 @@ export default function Hosting() {
         items: [
           {
             id: 1,
-            description: `${s.type}: ${s.plan} (${s.domain}), ${tenureLabel(s.tenure)}, ${fmtDate(s.due)} to ${fmtDate(next)}`,
+            description: `${s.type}: ${s.plan} (${s.domain}), ${tenureLabel(
+              s.tenure,
+            )}, ${fmtDate(s.due)} to ${fmtDate(next)}`,
             hsn: "998315",
             qty: 1,
             price: s.amount,
@@ -910,7 +917,13 @@ export default function Hosting() {
       return flash("Add a WhatsApp number for this client first.");
     }
 
-    const text = `Hello ${s.client}, your ${s.plan} ${s.type.toLowerCase()} for ${s.domain} is due ${whenText(s)} (${fmtDate(s.due)}). Amount: ${inr(gross(s))}${s.gstOn ? " incl. GST" : ""} for ${tenureLabel(s.tenure)}. Please confirm to continue the service. - Pegal Agency`;
+    const text = `Hello ${s.client}, your ${s.plan} ${s.type.toLowerCase()} for ${s.domain} is due ${whenText(
+      s,
+    )} (${fmtDate(s.due)}). Amount: ${inr(gross(s))}${
+      s.gstOn ? " incl. GST" : ""
+    } for ${tenureLabel(
+      s.tenure,
+    )}. Please confirm to continue the service. - Pegal Agency`;
 
     window.open(`${link}?text=${encodeURIComponent(text)}`, "_blank");
   };
@@ -924,9 +937,13 @@ export default function Hosting() {
 
     const body = `Hello ${s.client},
 
-Your ${s.plan} ${s.type.toLowerCase()} for ${s.domain} is due ${whenText(s)} (${fmtDate(s.due)}).
+Your ${s.plan} ${s.type.toLowerCase()} for ${s.domain} is due ${whenText(
+      s,
+    )} (${fmtDate(s.due)}).
 
-Amount: ${inr(gross(s))}${s.gstOn ? " incl. GST" : ""} for ${tenureLabel(s.tenure)}.
+Amount: ${inr(gross(s))}${s.gstOn ? " incl. GST" : ""} for ${tenureLabel(
+      s.tenure,
+    )}.
 
 Please confirm to continue the service.
 
