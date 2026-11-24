@@ -7,48 +7,59 @@ import Client from "../models/Client.js";
 
 const router = express.Router();
 
+const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+const prepareClient = async (client) => {
+  if (!client) {
+    return client;
+  }
+
+  const email = String(client.email || "")
+    .trim()
+    .toLowerCase();
+
+  let clientId = client.clientId || null;
+
+  if (clientId && isValidId(clientId)) {
+    const existingClient = await Client.findById(clientId);
+
+    if (!existingClient) {
+      clientId = null;
+    }
+  } else {
+    clientId = null;
+  }
+
+  if (!clientId && email) {
+    let existingClient = await Client.findOne({ email });
+
+    if (!existingClient) {
+      existingClient = await Client.create({
+        name: client.name || "",
+        company: client.company || "",
+        email,
+        phone: client.phone || "",
+        address: client.address || "",
+        gstin: client.gstin || "",
+      });
+    }
+
+    clientId = existingClient._id;
+  }
+
+  return {
+    ...client,
+    email,
+    clientId,
+  };
+};
+
 router.post("/", async (req, res) => {
   try {
     const invoiceData = { ...req.body };
 
     if (invoiceData.client) {
-      const email = String(invoiceData.client.email || "")
-        .trim()
-        .toLowerCase();
-
-      let clientId = invoiceData.client.clientId || null;
-
-      if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
-        const existingClient = await Client.findById(clientId);
-        if (!existingClient) {
-          clientId = null;
-        }
-      } else {
-        clientId = null;
-      }
-
-      if (!clientId && email) {
-        let existingClient = await Client.findOne({ email });
-
-        if (!existingClient) {
-          existingClient = await Client.create({
-            name: invoiceData.client.name || "",
-            company: invoiceData.client.company || "",
-            email,
-            phone: invoiceData.client.phone || "",
-            address: invoiceData.client.address || "",
-            gstin: invoiceData.client.gstin || "",
-          });
-        }
-
-        clientId = existingClient._id;
-      }
-
-      invoiceData.client = {
-        ...invoiceData.client,
-        email,
-        clientId,
-      };
+      invoiceData.client = await prepareClient(invoiceData.client);
     }
 
     const invoice = await Invoice.create(invoiceData);
@@ -56,6 +67,126 @@ router.post("/", async (req, res) => {
     res.status(201).json(invoice);
   } catch (error) {
     console.error("Create invoice error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message:
+          "Invoice number already exists. Please use another invoice number.",
+      });
+    }
+
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+});
+
+router.put("/:id", async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid invoice ID",
+      });
+    }
+
+    const invoice = await Invoice.findById(req.params.id);
+
+    if (!invoice) {
+      return res.status(404).json({
+        message: "Invoice not found",
+      });
+    }
+
+    if (
+      invoice.status === "Paid" ||
+      invoice.status === "Refunded" ||
+      invoice.status === "Partially Refunded"
+    ) {
+      return res.status(400).json({
+        message: "Paid or refunded invoices cannot be edited.",
+      });
+    }
+
+    const invoiceData = { ...req.body };
+
+    if (invoiceData.client) {
+      invoiceData.client = await prepareClient(invoiceData.client);
+    }
+
+    delete invoiceData._id;
+    delete invoiceData.createdAt;
+    delete invoiceData.updatedAt;
+    delete invoiceData.refunds;
+    delete invoiceData.refundedAmount;
+
+    const updatedInvoice = await Invoice.findByIdAndUpdate(
+      req.params.id,
+      invoiceData,
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+
+    if (!updatedInvoice) {
+      return res.status(404).json({
+        message: "Invoice not found",
+      });
+    }
+
+    res.json(updatedInvoice);
+  } catch (error) {
+    console.error("Update invoice error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message:
+          "Invoice number already exists. Please use another invoice number.",
+      });
+    }
+
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid invoice ID",
+      });
+    }
+
+    const invoice = await Invoice.findById(req.params.id);
+
+    if (!invoice) {
+      return res.status(404).json({
+        message: "Invoice not found",
+      });
+    }
+
+    if (
+      invoice.status !== "Unpaid" ||
+      Number(invoice.refundedAmount || 0) > 0 ||
+      (invoice.refunds && invoice.refunds.length > 0)
+    ) {
+      return res.status(400).json({
+        message: "Only unpaid invoices without refunds can be deleted.",
+      });
+    }
+
+    await Invoice.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({
+      success: true,
+      message: "Invoice deleted successfully",
+      invoiceId: req.params.id,
+    });
+  } catch (error) {
+    console.error("Delete invoice error:", error);
+
     res.status(500).json({
       message: error.message,
     });
@@ -70,6 +201,8 @@ router.get("/", async (req, res) => {
 
     res.json(invoices);
   } catch (error) {
+    console.error("Get invoices error:", error);
+
     res.status(500).json({
       message: error.message,
     });
@@ -80,7 +213,7 @@ router.get("/client/:clientId/financials", async (req, res) => {
   try {
     const { clientId } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+    if (!isValidId(clientId)) {
       return res.status(400).json({
         message: "Invalid client ID",
       });
@@ -149,6 +282,7 @@ router.get("/client/:clientId/financials", async (req, res) => {
     });
   } catch (error) {
     console.error("Client financials error:", error);
+
     res.status(500).json({
       message: error.message,
     });
@@ -157,6 +291,12 @@ router.get("/client/:clientId/financials", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid invoice ID",
+      });
+    }
+
     const invoice = await Invoice.findById(req.params.id).populate(
       "client.clientId",
     );
@@ -169,6 +309,8 @@ router.get("/:id", async (req, res) => {
 
     res.json(invoice);
   } catch (error) {
+    console.error("Get invoice error:", error);
+
     res.status(500).json({
       message: error.message,
     });
@@ -177,6 +319,12 @@ router.get("/:id", async (req, res) => {
 
 router.post("/:id/link-client", async (req, res) => {
   try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid invoice ID",
+      });
+    }
+
     const invoice = await Invoice.findById(req.params.id);
 
     if (!invoice) {
@@ -219,6 +367,7 @@ router.post("/:id/link-client", async (req, res) => {
     });
   } catch (error) {
     console.error("Link client error:", error);
+
     res.status(500).json({
       message: error.message,
     });
@@ -227,6 +376,12 @@ router.post("/:id/link-client", async (req, res) => {
 
 router.post("/:id/refund", async (req, res) => {
   try {
+    if (!isValidId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid invoice ID",
+      });
+    }
+
     const { amount, reason } = req.body;
 
     const invoice = await Invoice.findById(req.params.id);
@@ -279,6 +434,8 @@ router.post("/:id/refund", async (req, res) => {
 
     res.json(invoice);
   } catch (error) {
+    console.error("Refund invoice error:", error);
+
     res.status(500).json({
       message: error.message,
     });
