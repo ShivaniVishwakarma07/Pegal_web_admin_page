@@ -9,13 +9,13 @@ import {
   Mail,
   Check,
   AlertCircle,
+  Pencil,
+  X,
+  Search,
 } from "lucide-react";
 
-/* Put your logo at public/pegal-logo.png (or change this path). */
 const LOGO = "/pegal-logo.png";
-//const STORE = "pegal_invoices";
 
-/* Fixed details used on every invoice. Edit them once here. */
 const BUSINESS = {
   name: "Pegal Agency",
   address: "Your business address",
@@ -23,10 +23,12 @@ const BUSINESS = {
   phone: "+91 98765 43210",
   gstin: "",
 };
+
 const PAY = {
   bank: "Account name: Pegal Agency\nAccount number: 0000000000\nIFSC: ABCD0000000",
   upi: "pegal@upi",
 };
+
 const NOTES = "Thank you for choosing Pegal Agency.";
 const TERMS =
   "Payment is due by the due date. Late payments may attract a service charge.";
@@ -37,13 +39,17 @@ const inr = (v) =>
     currency: "INR",
     maximumFractionDigits: 2,
   }).format(v || 0);
+
 const num = (v) => Math.max(0, Number(v) || 0);
+
 const today = () => new Date().toLocaleDateString("en-CA");
+
 const addDays = (d, k) => {
   const x = new Date(d);
   x.setDate(x.getDate() + k);
   return x.toLocaleDateString("en-CA");
 };
+
 const fmtDate = (d) =>
   d
     ? new Date(d).toLocaleDateString("en-IN", {
@@ -52,14 +58,6 @@ const fmtDate = (d) =>
         year: "numeric",
       })
     : "";
-
-// const load = () => {
-//   try {
-//     return JSON.parse(localStorage.getItem(STORE)) || [];
-//   } catch {
-//     return [];
-//   }
-// };
 
 const ones = [
   "",
@@ -83,6 +81,7 @@ const ones = [
   "Eighteen",
   "Nineteen",
 ];
+
 const tens = [
   "",
   "",
@@ -95,18 +94,24 @@ const tens = [
   "Eighty",
   "Ninety",
 ];
+
 const two = (n) =>
   n < 20
     ? ones[n]
     : tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "");
+
 const three = (n) =>
   (n > 99
     ? ones[Math.floor(n / 100)] + " Hundred" + (n % 100 ? " " : "")
     : "") + (n % 100 ? two(n % 100) : "");
+
 function inWords(value) {
   let n = Math.round(value);
+
   if (!n) return "Zero Rupees Only";
+
   const out = [];
+
   for (const [v, l] of [
     [10000000, "Crore"],
     [100000, "Lakh"],
@@ -117,7 +122,9 @@ function inWords(value) {
       n %= v;
     }
   }
+
   if (n) out.push(three(n));
+
   return out.join(" ") + " Rupees Only";
 }
 
@@ -145,15 +152,16 @@ const Card = ({ title, hint, children }) => (
 
 export default function Invoice({ onSave }) {
   const [meta, setMeta] = useState(() => ({
-    number: `PEG-${new Date().getFullYear()}-${Date.now()}`,
+    number: "INV-1",
     issue: today(),
     due: addDays(today(), 7),
     status: "Unpaid",
   }));
-  const business = BUSINESS,
-    pay = PAY,
-    notes = NOTES,
-    terms = TERMS;
+
+  const business = BUSINESS;
+  const pay = PAY;
+  const notes = NOTES;
+  const terms = TERMS;
 
   const [client, setClient] = useState({
     clientId: "",
@@ -175,6 +183,7 @@ export default function Invoice({ onSave }) {
       gst: 18,
     },
   ]);
+
   const [discount, setDiscount] = useState(0);
   const [discountType, setDiscountType] = useState("flat");
   const [gstOn, setGstOn] = useState(true);
@@ -187,6 +196,12 @@ export default function Invoice({ onSave }) {
   const [logoOk, setLogoOk] = useState(true);
 
   const [clients, setClients] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [showInvoiceList, setShowInvoiceList] = useState(false);
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const loadClients = async () => {
@@ -207,114 +222,453 @@ export default function Invoice({ onSave }) {
     loadClients();
   }, []);
 
+  const loadInvoices = async () => {
+    try {
+      setLoadingInvoices(true);
+
+      const response = await fetch(`${API_URL}/api/invoices`);
+
+      if (!response.ok) {
+        throw new Error("Failed to load invoices");
+      }
+
+      const data = await response.json();
+      setInvoices(Array.isArray(data) ? data : []);
+    } catch (error) {
+      flash("err", error.message || "Failed to load invoices");
+    } finally {
+      setLoadingInvoices(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInvoices();
+  }, []);
+
   const t = useMemo(() => {
     const lines = items.map((i) => ({
       ...i,
       amount: num(i.qty) * num(i.price),
     }));
+
     const sub = lines.reduce((s, l) => s + l.amount, 0);
+
     const disc = Math.min(
       sub,
       discountType === "percent"
         ? (sub * Math.min(100, num(discount))) / 100
         : num(discount),
     );
+
     const factor = sub ? (sub - disc) / sub : 0;
     const taxable = sub - disc;
+
     const gst = gstOn
       ? lines.reduce((s, l) => s + (l.amount * factor * num(l.gst)) / 100, 0)
       : 0;
+
     const raw = taxable + gst;
     const total = Math.round(raw);
-    return { lines, sub, disc, taxable, gst, round: total - raw, total };
+
+    return {
+      lines,
+      sub,
+      disc,
+      taxable,
+      gst,
+      round: total - raw,
+      total,
+    };
   }, [items, discount, discountType, gstOn]);
+
+  const filteredInvoices = useMemo(() => {
+    const q = invoiceSearch.trim().toLowerCase();
+
+    if (!q) return invoices;
+
+    return invoices.filter((invoice) => {
+      return (
+        String(invoice.number || "")
+          .toLowerCase()
+          .includes(q) ||
+        String(invoice.client?.name || "")
+          .toLowerCase()
+          .includes(q) ||
+        String(invoice.client?.company || "")
+          .toLowerCase()
+          .includes(q)
+      );
+    });
+  }, [invoices, invoiceSearch]);
 
   const setItem = (id, k, v) =>
     setItems((c) => c.map((i) => (i.id === id ? { ...i, [k]: v } : i)));
+
   const valid = () => {
     if (!client.name.trim()) return "Enter the client name.";
-    if (!items.some((i) => i.description.trim() && num(i.price) > 0))
+
+    if (!items.some((i) => i.description.trim() && num(i.price) > 0)) {
       return "Add at least one item with a price.";
-    if (meta.due < meta.issue)
+    }
+
+    if (meta.due < meta.issue) {
       return "The due date cannot be before the issue date.";
+    }
+
     return null;
   };
+
   const flash = (type, text) => {
     setMsg({ type, text });
+
     setTimeout(() => setMsg(null), 3500);
   };
 
-  const save = async () => {
-    const err = valid();
-    if (err) return flash("err", err);
+  const resetInvoice = () => {
+    setMeta({
+      number: "INV-1",
+      issue: today(),
+      due: addDays(today(), 7),
+      status: "Unpaid",
+    });
 
-    const invoice = {
-      ...meta,
-      client,
-      items: t.lines,
-      discount: t.disc,
-      gstOn,
-      supply,
-      subtotal: t.sub,
-      gst: t.gst,
-      total: t.total,
-      refundedAmount: 0,
-      refunds: [],
-    };
+    setClient({
+      clientId: "",
+      name: "",
+      company: "",
+      email: "",
+      phone: "",
+      address: "",
+      gstin: "",
+    });
 
-    const generateInvoiceNumber = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/invoices`);
+    setItems([
+      {
+        id: 1,
+        description: "Website design and development",
+        hsn: "9983",
+        qty: 1,
+        price: 15000,
+        gst: 18,
+      },
+    ]);
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch invoices");
-        }
+    setDiscount(0);
+    setDiscountType("flat");
+    setGstOn(true);
+    setSupply("intra");
+    setSavedInvoiceId(null);
+    setRefundAmount("");
+    setRefundReason("");
+    setRefunds([]);
+  };
 
-        const invoices = await response.json();
-
-        let maxNumber = 0;
-
-        invoices.forEach((invoice) => {
-          const match = String(invoice.number || "").match(/PEG-\d{4}-(\d+)/);
-
-          if (match) {
-            maxNumber = Math.max(maxNumber, Number(match[1]));
-          }
-        });
-
-        return `PEG-${new Date().getFullYear()}-${String(
-          maxNumber + 1,
-        ).padStart(3, "0")}`;
-      } catch (error) {
-        return `PEG-${new Date().getFullYear()}-${Date.now()}`;
-      }
-    };
-
+  const loadInvoiceForEdit = async (id) => {
     try {
-      const response = await fetch(`${API_URL}/api/invoices`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(invoice),
-      });
+      const response = await fetch(`${API_URL}/api/invoices/${id}`);
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to save invoice");
+        throw new Error(data.message || "Failed to load invoice");
+      }
+
+      if (
+        data.status === "Paid" ||
+        data.status === "Refunded" ||
+        data.status === "Partially Refunded"
+      ) {
+        return flash("err", "Paid or refunded invoices cannot be edited.");
+      }
+
+      setSavedInvoiceId(data._id);
+
+      setMeta({
+        number: data.number || "INV-1",
+        issue: data.issue ? String(data.issue).slice(0, 10) : today(),
+        due: data.due ? String(data.due).slice(0, 10) : addDays(today(), 7),
+        status: data.status || "Unpaid",
+      });
+
+      setClient({
+        clientId: data.client?.clientId?._id || data.client?.clientId || "",
+        name: data.client?.name || "",
+        company: data.client?.company || "",
+        email: data.client?.email || "",
+        phone: data.client?.phone || "",
+        address: data.client?.address || "",
+        gstin: data.client?.gstin || "",
+      });
+
+      setItems(
+        Array.isArray(data.items) && data.items.length
+          ? data.items.map((item, index) => ({
+              ...item,
+              id: item.id || Date.now() + index,
+              qty: item.qty ?? 1,
+              price: item.price ?? 0,
+              gst: item.gst ?? 18,
+            }))
+          : [
+              {
+                id: Date.now(),
+                description: "",
+                hsn: "9983",
+                qty: 1,
+                price: 0,
+                gst: 18,
+              },
+            ],
+      );
+
+      setDiscount(data.discount || 0);
+      setDiscountType("flat");
+      setGstOn(data.gstOn !== false);
+      setSupply(data.supply || "intra");
+      setRefunds(data.refunds || []);
+      setRefundAmount("");
+      setRefundReason("");
+      setShowInvoiceList(false);
+      setInvoiceSearch("");
+
+      flash("ok", `Invoice ${data.number} loaded for editing.`);
+    } catch (error) {
+      flash("err", error.message || "Failed to load invoice");
+    }
+  };
+
+  const generateInvoiceNumber = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/invoices`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch invoices");
+      }
+
+      const data = await response.json();
+
+      let maxNumber = 0;
+
+      data.forEach((invoice) => {
+        const match = String(invoice.number || "").match(/^INV-(\d+)$/);
+
+        if (match) {
+          maxNumber = Math.max(maxNumber, Number(match[1]));
+        }
+      });
+
+      return `INV-${maxNumber + 1}`;
+    } catch (error) {
+      return `INV-${Date.now().toString().slice(-8)}`;
+    }
+  };
+
+  const getAvailableInvoiceNumber = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/invoices`);
+
+      if (!response.ok) {
+        return `INV-${Date.now().toString().slice(-8)}`;
+      }
+
+      const data = await response.json();
+
+      const numbers = new Set(
+        (Array.isArray(data) ? data : []).map((invoice) =>
+          String(invoice.number || ""),
+        ),
+      );
+
+      if (!numbers.has(meta.number)) {
+        return meta.number;
+      }
+
+      return await generateInvoiceNumber();
+    } catch {
+      return meta.number || `INV-${Date.now().toString().slice(-8)}`;
+    }
+  };
+
+  const save = async () => {
+    const err = valid();
+
+    if (err) {
+      return flash("err", err);
+    }
+
+    if (saving) return;
+
+    if (
+      savedInvoiceId &&
+      (meta.status === "Paid" ||
+        meta.status === "Refunded" ||
+        meta.status === "Partially Refunded")
+    ) {
+      return flash("err", "Paid or refunded invoices cannot be edited.");
+    }
+
+    try {
+      setSaving(true);
+
+      let invoiceNumber = meta.number;
+
+      if (!savedInvoiceId) {
+        invoiceNumber = await getAvailableInvoiceNumber();
+
+        if (!invoiceNumber) {
+          invoiceNumber = `INV-${Date.now().toString().slice(-8)}`;
+        }
+
+        setMeta((prev) => ({
+          ...prev,
+          number: invoiceNumber,
+        }));
+      }
+
+      const invoice = {
+        ...meta,
+        number: invoiceNumber,
+        client,
+        items: t.lines,
+        discount: t.disc,
+        gstOn,
+        supply,
+        subtotal: t.sub,
+        gst: t.gst,
+        total: t.total,
+      };
+
+      let response;
+
+      if (savedInvoiceId) {
+        response = await fetch(`${API_URL}/api/invoices/${savedInvoiceId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(invoice),
+        });
+      } else {
+        invoice.refundedAmount = 0;
+        invoice.refunds = [];
+
+        response = await fetch(`${API_URL}/api/invoices`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(invoice),
+        });
+      }
+
+      let data = await response.json();
+
+      if (!response.ok) {
+        if (
+          !savedInvoiceId &&
+          response.status === 500 &&
+          String(data.message || "")
+            .toLowerCase()
+            .includes("duplicate")
+        ) {
+          const retryNumber = `INV-${Date.now().toString().slice(-8)}`;
+
+          const retryInvoice = {
+            ...invoice,
+            number: retryNumber,
+            refundedAmount: 0,
+            refunds: [],
+          };
+
+          const retryResponse = await fetch(`${API_URL}/api/invoices`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(retryInvoice),
+          });
+
+          const retryData = await retryResponse.json();
+
+          if (!retryResponse.ok) {
+            throw new Error(retryData.message || "Failed to save invoice");
+          }
+
+          data = retryData;
+        } else {
+          throw new Error(data.message || "Failed to save invoice");
+        }
       }
 
       onSave?.(data);
+
       setSavedInvoiceId(data._id);
+
       setRefunds(data.refunds || []);
+
       setMeta((prev) => ({
         ...prev,
-        status: data.status,
+        number: data.number || invoiceNumber,
+        status: data.status || prev.status,
       }));
-      flash("ok", `Invoice ${meta.number} saved.`);
+
+      await loadInvoices();
+
+      flash(
+        "ok",
+        savedInvoiceId
+          ? `Invoice ${data.number || invoiceNumber} updated.`
+          : `Invoice ${data.number || invoiceNumber} saved.`,
+      );
     } catch (error) {
       flash("err", error.message || "Failed to save invoice");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteInvoice = async () => {
+    if (!savedInvoiceId) {
+      return flash("err", "Save the invoice before deleting it.");
+    }
+
+    if (meta.status !== "Unpaid" || refunds.length > 0) {
+      return flash(
+        "err",
+        "Only unpaid invoices without refunds can be deleted.",
+      );
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete invoice ${meta.number}?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+
+      const response = await fetch(
+        `${API_URL}/api/invoices/${savedInvoiceId}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to delete invoice");
+      }
+
+      await loadInvoices();
+      resetInvoice();
+
+      flash("ok", "Invoice deleted successfully.");
+    } catch (error) {
+      flash("err", error.message || "Failed to delete invoice");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -329,9 +683,20 @@ export default function Invoice({ onSave }) {
       return flash("err", "Enter a valid refund amount.");
     }
 
+    const alreadyRefunded = refunds.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+
+    const remaining = t.total - alreadyRefunded;
+
+    if (amount > remaining) {
+      return flash("err", `Maximum refundable amount is ${inr(remaining)}.`);
+    }
+
     try {
       const response = await fetch(
-  `${API_URL}/api/invoices/${savedInvoiceId}/refund`,
+        `${API_URL}/api/invoices/${savedInvoiceId}/refund`,
         {
           method: "POST",
           headers: {
@@ -356,8 +721,11 @@ export default function Invoice({ onSave }) {
       }));
 
       setRefunds(data.refunds || []);
+
       setRefundAmount("");
       setRefundReason("");
+
+      await loadInvoices();
 
       flash("ok", "Refund processed successfully.");
     } catch (error) {
@@ -367,13 +735,20 @@ export default function Invoice({ onSave }) {
 
   const print = () => {
     const err = valid();
-    if (err) return flash("err", err);
+
+    if (err) {
+      return flash("err", err);
+    }
+
     window.print();
   };
 
   const share = () => {
     const err = valid();
-    if (err) return flash("err", err);
+
+    if (err) {
+      return flash("err", err);
+    }
 
     let p = client.phone.replace(/\D/g, "");
 
@@ -396,7 +771,10 @@ export default function Invoice({ onSave }) {
 
   const shareEmail = () => {
     const err = valid();
-    if (err) return flash("err", err);
+
+    if (err) {
+      return flash("err", err);
+    }
 
     if (!client.email.trim()) {
       return flash("err", "Enter the client's email address.");
@@ -426,24 +804,54 @@ ${business.name}`;
   };
 
   const half = gstOn ? t.gst / 2 : 0;
+
   const stamp = {
     Paid: "text-emerald-600 border-emerald-600",
     Overdue: "text-rose-600 border-rose-600",
+    Refunded: "text-rose-600 border-rose-600",
+    "Partially Refunded": "text-amber-600 border-amber-600",
   }[meta.status];
 
   return (
     <div className="invoice-page min-w-0 text-slate-900">
-      {/* Top bar */}
       <div className="sticky top-0 z-20 -mx-4 mb-6 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 print:hidden">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-lg font-bold tracking-tight">New invoice</h1>
+            <h1 className="text-lg font-bold tracking-tight">
+              {savedInvoiceId ? "Edit invoice" : "New invoice"}
+            </h1>
+
             <p className="text-xs text-slate-500">
               {meta.number} · Total{" "}
               <strong className="text-slate-900">{inr(t.total)}</strong>
             </p>
           </div>
+
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => {
+                setShowInvoiceList(true);
+                setInvoiceSearch("");
+                loadInvoices();
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Pencil size={16} /> Edit invoice
+            </button>
+
+            {savedInvoiceId && (
+              <button
+                onClick={deleteInvoice}
+                disabled={
+                  deleting || meta.status !== "Unpaid" || refunds.length > 0
+                }
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 size={16} />
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            )}
+
             <button
               onClick={share}
               className="inline-flex items-center gap-2 rounded-xl bg-[#25D366] px-3.5 py-2 text-sm font-semibold text-emerald-950 hover:brightness-95"
@@ -464,17 +872,29 @@ ${business.name}`;
             >
               <Printer size={16} /> Print / PDF
             </button>
+
             <button
               onClick={save}
-              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Save size={16} /> Save invoice
+              <Save size={16} />
+              {saving
+                ? "Saving..."
+                : savedInvoiceId
+                  ? "Update invoice"
+                  : "Save invoice"}
             </button>
           </div>
         </div>
+
         {msg && (
           <div
-            className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${msg.type === "ok" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}
+            className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
+              msg.type === "ok"
+                ? "bg-emerald-50 text-emerald-700"
+                : "bg-rose-50 text-rose-700"
+            }`}
             role="status"
           >
             {msg.type === "ok" ? (
@@ -488,7 +908,6 @@ ${business.name}`;
       </div>
 
       <div className="grid min-w-0 grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-        {/* EDITOR */}
         <div className="min-w-0 space-y-5 print:hidden">
           <Card title="Invoice details">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -496,45 +915,85 @@ ${business.name}`;
                 <input
                   className={input}
                   value={meta.number}
-                  onChange={(e) => setMeta({ ...meta, number: e.target.value })}
+                  disabled={!!savedInvoiceId}
+                  onChange={(e) =>
+                    setMeta({
+                      ...meta,
+                      number: e.target.value,
+                    })
+                  }
                 />
               </Field>
+
               <Field label="Status">
                 <select
                   className={input}
                   value={meta.status}
-                  onChange={(e) => setMeta({ ...meta, status: e.target.value })}
+                  disabled={
+                    !!savedInvoiceId &&
+                    ["Paid", "Refunded", "Partially Refunded"].includes(
+                      meta.status,
+                    )
+                  }
+                  onChange={(e) =>
+                    setMeta({
+                      ...meta,
+                      status: e.target.value,
+                    })
+                  }
                 >
-                  {["Unpaid", "Paid", "Partially paid", "Overdue", "Draft"].map(
-                    (s) => (
-                      <option key={s}>{s}</option>
-                    ),
-                  )}
+                  {[
+                    "Unpaid",
+                    "Paid",
+                    "Partially paid",
+                    "Overdue",
+                    "Draft",
+                    "Refunded",
+                    "Partially Refunded",
+                  ].map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
                 </select>
               </Field>
+
               <Field label="Issue date">
                 <input
                   type="date"
                   className={input}
                   value={meta.issue ? meta.issue.slice(0, 10) : ""}
-                  onChange={(e) => setMeta({ ...meta, issue: e.target.value })}
+                  onChange={(e) =>
+                    setMeta({
+                      ...meta,
+                      issue: e.target.value,
+                    })
+                  }
                 />
               </Field>
+
               <Field label="Due date">
                 <input
                   type="date"
                   min={meta.issue}
                   className={input}
                   value={meta.due ? meta.due.slice(0, 10) : ""}
-                  onChange={(e) => setMeta({ ...meta, due: e.target.value })}
+                  onChange={(e) =>
+                    setMeta({
+                      ...meta,
+                      due: e.target.value,
+                    })
+                  }
                 />
+
                 <div className="mt-2 flex gap-1.5">
                   {[7, 15, 30].map((d) => (
                     <button
                       key={d}
                       type="button"
                       onClick={() =>
-                        setMeta({ ...meta, due: addDays(meta.issue, d) })
+                        setMeta({
+                          ...meta,
+                          due: addDays(meta.issue, d),
+                        })
                       }
                       className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
                     >
@@ -584,6 +1043,7 @@ ${business.name}`;
                   }}
                 >
                   <option value="">Select a client</option>
+
                   {clients.map((c) => (
                     <option key={c._id} value={c._id}>
                       {c.name} {c.company ? `- ${c.company}` : ""}
@@ -597,7 +1057,10 @@ ${business.name}`;
                   className={input}
                   value={client.name}
                   onChange={(e) =>
-                    setClient({ ...client, name: e.target.value })
+                    setClient({
+                      ...client,
+                      name: e.target.value,
+                    })
                   }
                   placeholder="Full name"
                 />
@@ -608,7 +1071,10 @@ ${business.name}`;
                   className={input}
                   value={client.company}
                   onChange={(e) =>
-                    setClient({ ...client, company: e.target.value })
+                    setClient({
+                      ...client,
+                      company: e.target.value,
+                    })
                   }
                 />
               </Field>
@@ -618,7 +1084,10 @@ ${business.name}`;
                   className={input}
                   value={client.phone}
                   onChange={(e) =>
-                    setClient({ ...client, phone: e.target.value })
+                    setClient({
+                      ...client,
+                      phone: e.target.value,
+                    })
                   }
                   placeholder="98765 43210"
                 />
@@ -630,7 +1099,10 @@ ${business.name}`;
                   className={input}
                   value={client.email}
                   onChange={(e) =>
-                    setClient({ ...client, email: e.target.value })
+                    setClient({
+                      ...client,
+                      email: e.target.value,
+                    })
                   }
                 />
               </Field>
@@ -641,7 +1113,10 @@ ${business.name}`;
                   className={input}
                   value={client.address}
                   onChange={(e) =>
-                    setClient({ ...client, address: e.target.value })
+                    setClient({
+                      ...client,
+                      address: e.target.value,
+                    })
                   }
                 />
               </Field>
@@ -682,6 +1157,7 @@ ${business.name}`;
                         placeholder="Service description"
                       />
                     </Field>
+
                     <Field
                       label="HSN / SAC"
                       className="col-span-2 sm:col-span-2"
@@ -692,6 +1168,7 @@ ${business.name}`;
                         onChange={(e) => setItem(i.id, "hsn", e.target.value)}
                       />
                     </Field>
+
                     <Field label="Qty">
                       <input
                         type="number"
@@ -701,6 +1178,7 @@ ${business.name}`;
                         onChange={(e) => setItem(i.id, "qty", e.target.value)}
                       />
                     </Field>
+
                     <Field label="Rate (₹)" className="sm:col-span-2">
                       <input
                         type="number"
@@ -710,6 +1188,7 @@ ${business.name}`;
                         onChange={(e) => setItem(i.id, "price", e.target.value)}
                       />
                     </Field>
+
                     <Field label="GST %">
                       <select
                         className={input}
@@ -726,10 +1205,12 @@ ${business.name}`;
                         ))}
                       </select>
                     </Field>
+
                     <div className="col-span-2 flex items-end justify-between sm:col-span-1 sm:justify-end sm:gap-2">
                       <span className="pb-2.5 text-sm font-semibold sm:hidden">
                         {inr(num(i.qty) * num(i.price))}
                       </span>
+
                       <button
                         onClick={() =>
                           setItems((c) => c.filter((x) => x.id !== i.id))
@@ -745,6 +1226,7 @@ ${business.name}`;
                 </div>
               ))}
             </div>
+
             <button
               onClick={() =>
                 setItems((c) => [
@@ -776,6 +1258,7 @@ ${business.name}`;
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
                   />
+
                   <select
                     className={`${input} w-28 shrink-0`}
                     value={discountType}
@@ -786,6 +1269,7 @@ ${business.name}`;
                   </select>
                 </div>
               </Field>
+
               <Field label="Supply type">
                 <select
                   className={input}
@@ -797,6 +1281,7 @@ ${business.name}`;
                   <option value="inter">Other state (IGST)</option>
                 </select>
               </Field>
+
               <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 p-3 sm:col-span-2">
                 <input
                   type="checkbox"
@@ -804,6 +1289,7 @@ ${business.name}`;
                   onChange={(e) => setGstOn(e.target.checked)}
                   className="h-4 w-4 accent-blue-600"
                 />
+
                 <span className="text-sm font-medium">
                   Charge GST on this invoice
                 </span>
@@ -860,9 +1346,11 @@ ${business.name}`;
                   {refunds.map((item) => (
                     <tr key={item._id} className="border-b border-slate-100">
                       <td className="py-2 pr-3">{fmtDate(item.date)}</td>
+
                       <td className="py-2 pr-3 font-medium">
                         {inr(item.amount)}
                       </td>
+
                       <td className="py-2">{item.reason || "-"}</td>
                     </tr>
                   ))}
@@ -872,15 +1360,17 @@ ${business.name}`;
           )}
         </Card>
 
-        {/* LIVE PREVIEW */}
         <div className="min-w-0 space-y-5 xl:sticky xl:top-24 print:static">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:hidden">
             <h3 className="text-[15px] font-semibold text-slate-900">
               Summary
             </h3>
+
             <div className="mt-4 space-y-2 text-sm">
               <Row l="Subtotal" v={inr(t.sub)} />
+
               {t.disc > 0 && <Row l="Discount" v={`- ${inr(t.disc)}`} />}
+
               {gstOn &&
                 (supply === "intra" ? (
                   <>
@@ -890,25 +1380,30 @@ ${business.name}`;
                 ) : (
                   <Row l="IGST" v={inr(t.gst)} />
                 ))}
+
               {Math.abs(t.round) > 0.004 && (
                 <Row l="Round off" v={inr(t.round)} />
               )}
             </div>
+
             <div className="mt-4 rounded-xl bg-[#002F5F] p-4 text-white">
               <p className="text-xs text-sky-200">Total payable</p>
+
               <p className="mt-1 break-words text-2xl font-bold">
                 {inr(t.total)}
               </p>
+
               <p className="mt-1 text-xs text-sky-200">{inWords(t.total)}</p>
             </div>
           </section>
-          {/* Printed invoice only. Hidden on screen, shown by Print / PDF. */}
+
           <div className="hidden print:block">
             <article
               id="invoice-sheet"
               className="relative mx-auto w-full max-w-[794px] overflow-hidden rounded-xl bg-white text-[13px] leading-relaxed text-slate-700 shadow-xl ring-1 ring-slate-200 print:rounded-none print:shadow-none print:ring-0"
             >
               <div className="h-2 bg-gradient-to-r from-[#002F5F] via-[#055C9C] to-[#68B9E3]" />
+
               <div className="p-7 sm:p-10">
                 <div className="flex flex-wrap items-start justify-between gap-6">
                   <div className="flex items-start gap-3">
@@ -924,18 +1419,22 @@ ${business.name}`;
                         P
                       </div>
                     )}
+
                     <div>
                       <p className="text-lg font-bold text-[#002F5F]">
                         {business.name || "Your business"}
                       </p>
+
                       <p className="max-w-[260px] whitespace-pre-line text-xs text-slate-500">
                         {business.address}
                       </p>
+
                       <p className="text-xs text-slate-500">
                         {[business.email, business.phone]
                           .filter(Boolean)
                           .join(" | ")}
                       </p>
+
                       {business.gstin && (
                         <p className="text-xs font-medium text-slate-600">
                           GSTIN {business.gstin}
@@ -943,16 +1442,20 @@ ${business.name}`;
                       )}
                     </div>
                   </div>
+
                   <div className="text-right">
                     <h2 className="text-2xl font-bold tracking-tight text-[#0F86D6]">
                       {gstOn ? "Tax invoice" : "Invoice"}
                     </h2>
+
                     <p className="mt-1 font-semibold text-slate-900">
                       {meta.number}
                     </p>
+
                     <p className="text-xs text-slate-500">
                       Issued {fmtDate(meta.issue)}
                     </p>
+
                     <p className="text-xs text-slate-500">
                       Due {fmtDate(meta.due)}
                     </p>
@@ -971,16 +1474,21 @@ ${business.name}`;
                   <p className="text-xs font-semibold text-slate-400">
                     Billed to
                   </p>
+
                   <p className="mt-1 font-semibold text-slate-900">
                     {client.name || "Client name"}
                   </p>
+
                   {client.company && <p>{client.company}</p>}
+
                   <p className="whitespace-pre-line text-xs text-slate-500">
                     {client.address}
                   </p>
+
                   <p className="text-xs text-slate-500">
                     {[client.email, client.phone].filter(Boolean).join(" | ")}
                   </p>
+
                   {client.gstin && (
                     <p className="text-xs font-medium">GSTIN {client.gstin}</p>
                   )}
@@ -991,22 +1499,27 @@ ${business.name}`;
                     <thead>
                       <tr className="border-b-2 border-[#002F5F] text-xs text-[#002F5F]">
                         <th className="py-2 pr-2 font-semibold">Description</th>
+
                         <th className="px-2 py-2 text-right font-semibold">
                           Qty
                         </th>
+
                         <th className="px-2 py-2 text-right font-semibold">
                           Rate
                         </th>
+
                         {gstOn && (
                           <th className="px-2 py-2 text-right font-semibold">
                             GST
                           </th>
                         )}
+
                         <th className="py-2 pl-2 text-right font-semibold">
                           Amount
                         </th>
                       </tr>
                     </thead>
+
                     <tbody>
                       {t.lines.map((l) => (
                         <tr
@@ -1017,21 +1530,26 @@ ${business.name}`;
                             <span className="font-medium text-slate-900">
                               {l.description || "Item"}
                             </span>
+
                             {l.hsn && (
                               <span className="block text-[11px] text-slate-400">
                                 HSN/SAC {l.hsn}
                               </span>
                             )}
                           </td>
+
                           <td className="px-2 py-2.5 text-right">
                             {num(l.qty)}
                           </td>
+
                           <td className="px-2 py-2.5 text-right">
                             {inr(num(l.price))}
                           </td>
+
                           {gstOn && (
                             <td className="px-2 py-2.5 text-right">{l.gst}%</td>
                           )}
+
                           <td className="py-2.5 pl-2 text-right font-medium text-slate-900">
                             {inr(l.amount)}
                           </td>
@@ -1046,27 +1564,35 @@ ${business.name}`;
                     <p className="font-semibold text-slate-400">
                       Amount in words
                     </p>
+
                     <p className="mt-1 font-medium text-slate-700">
                       {inWords(t.total)}
                     </p>
                   </div>
+
                   <div className="w-full max-w-[280px] space-y-1.5 text-sm">
                     <Row l="Subtotal" v={inr(t.sub)} />
+
                     {t.disc > 0 && <Row l="Discount" v={`- ${inr(t.disc)}`} />}
+
                     {gstOn &&
                       (supply === "intra" ? (
                         <>
                           <Row l="CGST" v={inr(half)} />
+
                           <Row l="SGST" v={inr(half)} />
                         </>
                       ) : (
                         <Row l="IGST" v={inr(t.gst)} />
                       ))}
+
                     {Math.abs(t.round) > 0.004 && (
                       <Row l="Round off" v={inr(t.round)} />
                     )}
+
                     <div className="flex items-center justify-between rounded-lg bg-[#002F5F] px-3 py-2.5 text-white">
                       <span className="text-sm font-medium">Total due</span>
+
                       <span className="text-lg font-bold">{inr(t.total)}</span>
                     </div>
                   </div>
@@ -1077,28 +1603,35 @@ ${business.name}`;
                     <p className="font-semibold text-slate-400">
                       Payment details
                     </p>
+
                     <p className="mt-1 whitespace-pre-line">{pay.bank}</p>
+
                     {pay.upi && (
                       <p className="mt-1 font-medium">UPI: {pay.upi}</p>
                     )}
                   </div>
                 )}
+
                 {(notes || terms) && (
                   <div className="mt-5 grid gap-4 text-xs text-slate-500 sm:grid-cols-2">
                     {notes && (
                       <div>
                         <p className="font-semibold text-slate-400">Notes</p>
+
                         <p className="mt-1 whitespace-pre-line">{notes}</p>
                       </div>
                     )}
+
                     {terms && (
                       <div>
                         <p className="font-semibold text-slate-400">Terms</p>
+
                         <p className="mt-1 whitespace-pre-line">{terms}</p>
                       </div>
                     )}
                   </div>
                 )}
+
                 <p className="mt-8 text-center text-[11px] text-slate-400">
                   This is a computer-generated invoice.
                 </p>
@@ -1108,13 +1641,138 @@ ${business.name}`;
         </div>
       </div>
 
+      {showInvoiceList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm print:hidden">
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Select invoice to edit
+                </h2>
+
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Select an unpaid invoice to load it into the editor.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowInvoiceList(false);
+                  setInvoiceSearch("");
+                }}
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="border-b border-slate-100 p-4">
+              <div className="relative">
+                <Search
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+
+                <input
+                  className={`${input} pl-9`}
+                  placeholder="Search invoice number or client..."
+                  value={invoiceSearch}
+                  onChange={(e) => setInvoiceSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="max-h-[60vh] overflow-y-auto p-4">
+              {loadingInvoices ? (
+                <div className="py-10 text-center text-sm text-slate-500">
+                  Loading invoices...
+                </div>
+              ) : filteredInvoices.length === 0 ? (
+                <div className="py-10 text-center text-sm text-slate-500">
+                  No invoices found.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredInvoices.map((invoice) => {
+                    const canEdit =
+                      invoice.status === "Unpaid" &&
+                      Number(invoice.refundedAmount || 0) === 0 &&
+                      (!invoice.refunds || invoice.refunds.length === 0);
+
+                    return (
+                      <div
+                        key={invoice._id}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4 hover:bg-slate-50"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900">
+                            {invoice.number}
+                          </p>
+
+                          <p className="mt-0.5 text-sm text-slate-600">
+                            {invoice.client?.name || "Unknown client"}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-400">
+                            {fmtDate(invoice.issue)} · {inr(invoice.total)}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                              invoice.status === "Paid"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : invoice.status === "Refunded"
+                                  ? "bg-rose-50 text-rose-700"
+                                  : invoice.status === "Partially Refunded"
+                                    ? "bg-amber-50 text-amber-700"
+                                    : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {invoice.status || "Unpaid"}
+                          </span>
+
+                          <button
+                            disabled={!canEdit}
+                            onClick={() => loadInvoiceForEdit(invoice._id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Pencil size={14} />
+                            Edit
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @media print {
           @page { size: A4; margin: 10mm; }
-          body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body {
+            background: #fff !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
           body * { visibility: hidden; }
-          #invoice-sheet, #invoice-sheet * { visibility: visible; }
-          #invoice-sheet { position: absolute; left: 0; top: 0; width: 100%; max-width: none; }
+          #invoice-sheet,
+          #invoice-sheet * {
+            visibility: visible;
+          }
+          #invoice-sheet {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            max-width: none;
+          }
         }
       `}</style>
     </div>

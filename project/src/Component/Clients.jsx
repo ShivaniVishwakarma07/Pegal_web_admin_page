@@ -15,6 +15,8 @@ import {
   Download,
   Printer,
   X,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 
 const money = (value) =>
@@ -194,15 +196,10 @@ function invoiceHtml(invoice, client) {
       <div>
         <strong>Bill To</strong><br>
         ${safeText(client?.name || invoice.client?.name || "Client")}<br>
-
         ${safeText(client?.company || invoice.client?.company || "")}<br>
-
         ${safeText(client?.phone || invoice.client?.phone || "")}<br>
-
         ${safeText(client?.email || invoice.client?.email || "")}<br>
-
         ${safeText(client?.address || invoice.client?.address || "")}<br>
-
         ${safeText(client?.gstin || invoice.client?.gstin || "")}
       </div>
     </div>
@@ -281,14 +278,11 @@ function printInvoice(invoice, client) {
 
   if (!printWindow) {
     window.alert("Please allow pop-ups to print the invoice.");
-
     return;
   }
 
   printWindow.document.open();
-
   printWindow.document.write(invoiceHtml(invoice, client));
-
   printWindow.document.close();
 
   printWindow.onload = () => {
@@ -302,7 +296,6 @@ function shareInvoice(invoice, client) {
 
   if (!phone) {
     window.alert("No valid phone number is available for this client.");
-
     return;
   }
 
@@ -501,22 +494,118 @@ function InvoiceList({ client, invoices, onClose }) {
 
 export default function Clients() {
   const [invoices, setInvoices] = useState([]);
-
   const [clientsData, setClientsData] = useState([]);
-
   const [expenses, setExpenses] = useState([]);
-
   const [loading, setLoading] = useState(true);
-
   const [apiError, setApiError] = useState("");
-
   const [month, setMonth] = useState("all");
-
   const [mode, setMode] = useState("billed");
-
   const [query, setQuery] = useState("");
-
   const [viewing, setViewing] = useState(null);
+
+  const [editingClient, setEditingClient] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [savingClient, setSavingClient] = useState(false);
+  const [actionMessage, setActionMessage] = useState("");
+
+  const updateClient = async () => {
+    const clientId = editingClient?.mongoId;
+
+    if (!clientId) return;
+
+    try {
+      setSavingClient(true);
+      setActionMessage("");
+
+      const response = await fetch(`${API_URL}/api/clients/${clientId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: String(editingClient.name || "").trim(),
+          company: String(editingClient.company || "").trim(),
+          email: String(editingClient.email || "").trim(),
+          phone: String(editingClient.phone || "").trim(),
+          address: String(editingClient.address || "").trim(),
+          gstin: String(editingClient.gstin || "").trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to update client");
+      }
+
+      setClientsData((prev) =>
+        prev.map((client) =>
+          String(client._id) === String(clientId) ? data : client,
+        ),
+      );
+
+      setEditingClient(null);
+      setActionMessage("Client updated successfully.");
+
+      setTimeout(() => {
+        setActionMessage("");
+      }, 3000);
+    } catch (error) {
+      setActionMessage(error.message || "Failed to update client");
+    } finally {
+      setSavingClient(false);
+    }
+  };
+
+  const deleteClient = async () => {
+    const clientId = showDeleteConfirm?.mongoId;
+
+    if (!clientId) return;
+
+    try {
+      setSavingClient(true);
+      setActionMessage("");
+
+      const response = await fetch(`${API_URL}/api/clients/${clientId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to delete client");
+      }
+
+      setClientsData((prev) =>
+        prev.filter((client) => String(client._id) !== String(clientId)),
+      );
+
+      setInvoices((prev) =>
+        prev.filter(
+          (invoice) => getClientId(invoice) !== String(clientId).toLowerCase(),
+        ),
+      );
+
+      setExpenses((prev) =>
+        prev.filter(
+          (expense) =>
+            String(expense.clientId || "").toLowerCase() !==
+            String(clientId).toLowerCase(),
+        ),
+      );
+
+      setShowDeleteConfirm(null);
+      setActionMessage("Client deleted successfully.");
+
+      setTimeout(() => {
+        setActionMessage("");
+      }, 3000);
+    } catch (error) {
+      setActionMessage(error.message || "Failed to delete client");
+    } finally {
+      setSavingClient(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -544,15 +633,11 @@ export default function Clients() {
         }
 
         const clients = await clientsResponse.json();
-
         const invoices = await invoicesResponse.json();
-
         const expenses = await expensesResponse.json();
 
         setClientsData(Array.isArray(clients) ? clients : []);
-
         setInvoices(Array.isArray(invoices) ? invoices : []);
-
         setExpenses(Array.isArray(expenses) ? expenses : []);
       } catch (error) {
         setApiError(error.message || "Unable to load client data");
@@ -574,13 +659,11 @@ export default function Clients() {
 
         if (invoicesResponse.ok) {
           const data = await invoicesResponse.json();
-
           setInvoices(Array.isArray(data) ? data : []);
         }
 
         if (expensesResponse.ok) {
           const data = await expensesResponse.json();
-
           setExpenses(Array.isArray(data) ? data : []);
         }
       } catch {
@@ -680,8 +763,6 @@ export default function Clients() {
     });
 
     invoices.forEach((invoice) => {
-      const invoiceClient = invoice?.client || {};
-
       const clientId = getClientId(invoice);
 
       if (!clientId || !result[clientId]) {
@@ -689,17 +770,12 @@ export default function Clients() {
       }
 
       const total = Number(invoice.total || 0);
-
       const refunded = Number(invoice.refundedAmount || 0);
-
       const received = Math.max(0, total - refunded);
-
       const status = String(invoice.status || "").toLowerCase();
 
       result[clientId].revenue += total;
-
       result[clientId].refunded += refunded;
-
       result[clientId].count += 1;
 
       if (
@@ -739,8 +815,6 @@ export default function Clients() {
     const result = {};
 
     invoices.forEach((invoice) => {
-      const invoiceClient = invoice?.client || {};
-
       const id = getClientId(invoice);
 
       if (!id) return;
@@ -762,11 +836,8 @@ export default function Clients() {
       }
 
       result[id].billed += Number(invoice.total || 0);
-
       result[id].received += getPaid(invoice);
-
       result[id].due += getDue(invoice);
-
       result[id].count += 1;
 
       if (hasPartialPayments(invoice)) {
@@ -927,6 +998,12 @@ export default function Clients() {
         </select>
       </section>
 
+      {actionMessage && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+          {actionMessage}
+        </div>
+      )}
+
       {loading ? (
         <section className="rounded-2xl border border-slate-200 bg-white px-6 py-16 text-center">
           <p className="text-sm text-slate-500">Loading clients...</p>
@@ -1003,7 +1080,6 @@ export default function Clients() {
                   {client.email && (
                     <p className="flex items-center gap-2">
                       <Mail size={14} />
-
                       <span className="truncate">{client.email}</span>
                     </p>
                   )}
@@ -1011,7 +1087,6 @@ export default function Clients() {
                   {client.address && (
                     <p className="flex items-start gap-2">
                       <MapPin size={14} />
-
                       <span>{client.address}</span>
                     </p>
                   )}
@@ -1028,22 +1103,19 @@ export default function Clients() {
                   </p>
                 )}
 
-                <div className="mt-auto mt-5 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4 text-xs">
+                <div className="mt-5 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4 text-xs">
                   <div>
                     <p className="text-slate-400">Invoices</p>
-
                     <p className="mt-1 font-semibold">{stats.count}</p>
                   </div>
 
                   <div>
                     <p className="text-slate-400">Billed</p>
-
                     <p className="mt-1 font-semibold">{money(stats.billed)}</p>
                   </div>
 
                   <div>
                     <p className="text-slate-400">Outstanding</p>
-
                     <p
                       className={`mt-1 font-semibold ${
                         stats.due ? "text-rose-600" : ""
@@ -1057,7 +1129,6 @@ export default function Clients() {
                 <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 text-xs">
                   <div>
                     <p className="text-slate-400">Project Revenue</p>
-
                     <p className="mt-1 font-semibold text-slate-900">
                       {money(financial.revenue)}
                     </p>
@@ -1065,7 +1136,6 @@ export default function Clients() {
 
                   <div>
                     <p className="text-slate-400">Received</p>
-
                     <p className="mt-1 font-semibold text-emerald-700">
                       {money(financial.received)}
                     </p>
@@ -1073,7 +1143,6 @@ export default function Clients() {
 
                   <div>
                     <p className="text-slate-400">Expenses</p>
-
                     <p className="mt-1 font-semibold text-rose-600">
                       {money(financial.expenses)}
                     </p>
@@ -1081,7 +1150,6 @@ export default function Clients() {
 
                   <div>
                     <p className="text-slate-400">Net Profit</p>
-
                     <p
                       className={`mt-1 font-semibold ${
                         financial.profit >= 0
@@ -1095,7 +1163,6 @@ export default function Clients() {
 
                   <div>
                     <p className="text-slate-400">Refunded</p>
-
                     <p className="mt-1 font-semibold text-blue-700">
                       {money(financial.refunded)}
                     </p>
@@ -1103,19 +1170,47 @@ export default function Clients() {
 
                   <div>
                     <p className="text-slate-400">Pending</p>
-
                     <p className="mt-1 font-semibold text-orange-600">
                       {money(financial.pending)}
                     </p>
                   </div>
                 </div>
 
-                <button
-                  onClick={() => setViewing(client)}
-                  className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  <FileText size={15} /> View invoices
-                </button>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setViewing(client)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    <FileText size={15} />
+                    View
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      setEditingClient({
+                        mongoId: client.mongoId,
+                        name: client.name || "",
+                        company: client.company || "",
+                        email: client.email || "",
+                        phone: client.phone || "",
+                        address: client.address || "",
+                        gstin: client.gstin || "",
+                      })
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+                  >
+                    <Pencil size={15} />
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => setShowDeleteConfirm(client)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-100"
+                  >
+                    <Trash2 size={15} />
+                    Delete
+                  </button>
+                </div>
               </article>
             );
           })}
@@ -1146,6 +1241,207 @@ export default function Clients() {
           invoices={invoicesForClient(viewing)}
           onClose={() => setViewing(null)}
         />
+      )}
+
+      {editingClient && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Edit Client
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Update client information.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setEditingClient(null)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-6 py-5">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Name
+                </label>
+
+                <input
+                  value={editingClient.name}
+                  onChange={(e) =>
+                    setEditingClient({
+                      ...editingClient,
+                      name: e.target.value,
+                    })
+                  }
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Company
+                </label>
+
+                <input
+                  value={editingClient.company}
+                  onChange={(e) =>
+                    setEditingClient({
+                      ...editingClient,
+                      company: e.target.value,
+                    })
+                  }
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                    Email
+                  </label>
+
+                  <input
+                    type="email"
+                    value={editingClient.email}
+                    onChange={(e) =>
+                      setEditingClient({
+                        ...editingClient,
+                        email: e.target.value,
+                      })
+                    }
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                    Phone
+                  </label>
+
+                  <input
+                    value={editingClient.phone}
+                    onChange={(e) =>
+                      setEditingClient({
+                        ...editingClient,
+                        phone: e.target.value,
+                      })
+                    }
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Address
+                </label>
+
+                <textarea
+                  rows={3}
+                  value={editingClient.address}
+                  onChange={(e) =>
+                    setEditingClient({
+                      ...editingClient,
+                      address: e.target.value,
+                    })
+                  }
+                  className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  GSTIN
+                </label>
+
+                <input
+                  value={editingClient.gstin}
+                  onChange={(e) =>
+                    setEditingClient({
+                      ...editingClient,
+                      gstin: e.target.value,
+                    })
+                  }
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
+              <button
+                onClick={() => setEditingClient(null)}
+                disabled={savingClient}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={updateClient}
+                disabled={savingClient || !editingClient.name.trim()}
+                className="rounded-xl bg-[#002F5F] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#003b78] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingClient ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                  <Trash2 size={20} />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    Delete Client
+                  </h2>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Are you sure you want to delete{" "}
+                    <span className="font-semibold text-slate-900">
+                      {showDeleteConfirm.name}
+                    </span>
+                    ?
+                  </p>
+
+                  <p className="mt-1 text-xs text-slate-400">
+                    This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                disabled={savingClient}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={deleteClient}
+                disabled={savingClient}
+                className="rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {savingClient ? "Deleting..." : "Delete Client"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

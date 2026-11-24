@@ -9,6 +9,7 @@ import {
   Check,
   AlertCircle,
   Mail,
+  Pencil,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------
@@ -183,6 +184,10 @@ export default function Quotation({ onSave }) {
   const [logoOk, setLogoOk] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedQuotationId, setSavedQuotationId] = useState(null);
+  const [quotations, setQuotations] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const validUntil = addDays(date, VALID_DAYS);
 
@@ -219,6 +224,27 @@ export default function Quotation({ onSave }) {
     };
 
     loadClients();
+  }, []);
+
+  useEffect(() => {
+    const loadQuotations = async () => {
+      try {
+        const response = await fetch(`${API}/quotations`);
+
+        if (!response.ok) {
+          throw new Error("Failed to load quotation history");
+        }
+
+        const data = await response.json();
+        setQuotations(Array.isArray(data) ? data : []);
+      } catch (error) {
+        flash("err", error.message);
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+
+    loadQuotations();
   }, []);
 
   const setItem = (id, k, v) =>
@@ -321,6 +347,14 @@ export default function Quotation({ onSave }) {
 
       setSavedQuotationId(data._id || savedQuotationId);
 
+      setQuotations((current) => {
+        const exists = current.some((item) => item._id === data._id);
+
+        return exists
+          ? current.map((item) => (item._id === data._id ? data : item))
+          : [data, ...current];
+      });
+
       onSave?.(data);
 
       flash(
@@ -337,6 +371,116 @@ export default function Quotation({ onSave }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const editQuotation = (quotation) => {
+    const linkedClientId =
+      typeof quotation.client?.clientId === "object"
+        ? quotation.client.clientId?._id
+        : quotation.client?.clientId;
+
+    setSavedQuotationId(quotation._id);
+    setNumber(quotation.number || "");
+    setDate(
+      quotation.date
+        ? new Date(quotation.date).toISOString().slice(0, 10)
+        : today(),
+    );
+
+    setClient({
+      name: quotation.client?.name || "",
+      company: quotation.client?.company || "",
+      phone: quotation.client?.phone || "",
+      email: quotation.client?.email || "",
+      address: quotation.client?.address || "",
+      clientId: linkedClientId || "",
+    });
+
+    setProject(quotation.project || "");
+
+    setItems(
+      Array.isArray(quotation.items) && quotation.items.length
+        ? quotation.items.map((item, index) => ({
+            ...item,
+            id: item.id || Date.now() + index,
+            title: item.title || "",
+            desc: item.desc || "",
+            price: String(item.price ?? ""),
+          }))
+        : [{ id: Date.now(), title: "", desc: "", price: "" }],
+    );
+
+    setGstOn(Boolean(quotation.gstOn));
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+
+    flash("ok", `Editing quotation ${quotation.number}.`);
+  };
+
+  const deleteQuotation = async () => {
+    if (!deleteTarget) return;
+
+    setDeleting(true);
+
+    try {
+      const response = await fetch(`${API}/quotations/${deleteTarget._id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to delete quotation");
+      }
+
+      setQuotations((current) =>
+        current.filter((item) => item._id !== deleteTarget._id),
+      );
+
+      if (savedQuotationId === deleteTarget._id) {
+        setSavedQuotationId(null);
+      }
+
+      setDeleteTarget(null);
+      flash("ok", "Quotation deleted successfully.");
+    } catch (error) {
+      flash("err", error.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const newQuotation = () => {
+    setSavedQuotationId(null);
+
+    setNumber(
+      `PEG-QTN-${new Date().getFullYear()}-${String(
+        Math.floor(Math.random() * 900) + 100,
+      )}`,
+    );
+
+    setDate(today());
+
+    setClient({
+      name: "",
+      company: "",
+      phone: "",
+      email: "",
+      address: "",
+      clientId: "",
+    });
+
+    setProject("");
+    setItems([{ id: Date.now(), title: "", desc: "", price: "" }]);
+    setGstOn(false);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
   const download = () => {
@@ -499,6 +643,154 @@ ${BUSINESS.name}`;
           </div>
         )}
       </div>
+
+      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 print:hidden">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[15px] font-semibold text-slate-900">
+              Saved quotations
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-400">
+              View, edit or delete quotations saved in the database.
+            </p>
+          </div>
+
+          <button
+            onClick={newQuotation}
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            <Plus size={16} />
+            New quotation
+          </button>
+        </div>
+
+        {historyLoading ? (
+          <p className="py-6 text-center text-sm text-slate-500">
+            Loading quotation history...
+          </p>
+        ) : quotations.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 py-8 text-center">
+            <p className="text-sm font-medium text-slate-600">
+              No saved quotations yet.
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Save a quotation to see it here.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs text-slate-500">
+                  <th className="px-3 py-3 font-semibold">Quotation</th>
+                  <th className="px-3 py-3 font-semibold">Client</th>
+                  <th className="px-3 py-3 font-semibold">Project</th>
+                  <th className="px-3 py-3 font-semibold">Date</th>
+                  <th className="px-3 py-3 text-right font-semibold">Total</th>
+                  <th className="px-3 py-3 text-center font-semibold">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {quotations.map((quotation) => (
+                  <tr
+                    key={quotation._id}
+                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                  >
+                    <td className="px-3 py-3">
+                      <span className="font-semibold text-slate-800">
+                        {quotation.number}
+                      </span>
+                    </td>
+
+                    <td className="px-3 py-3 text-slate-600">
+                      {quotation.client?.name || "—"}
+                    </td>
+
+                    <td className="px-3 py-3 text-slate-600">
+                      {quotation.project || "—"}
+                    </td>
+
+                    <td className="px-3 py-3 text-slate-600">
+                      {fmtDate(quotation.date)}
+                    </td>
+
+                    <td className="px-3 py-3 text-right font-semibold text-slate-800">
+                      {inr(quotation.total)}
+                    </td>
+
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => editQuotation(quotation)}
+                          title="Edit quotation"
+                          className="rounded-lg border border-blue-200 bg-blue-50 p-2 text-blue-700 hover:bg-blue-100"
+                        >
+                          <Pencil size={15} />
+                        </button>
+
+                        <button
+                          onClick={() => setDeleteTarget(quotation)}
+                          title="Delete quotation"
+                          className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-rose-600 hover:bg-rose-100"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 print:hidden">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-rose-50 p-3 text-rose-600">
+                <Trash2 size={21} />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-bold text-slate-900">
+                  Delete quotation?
+                </h3>
+
+                <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                  Are you sure you want to delete quotation{" "}
+                  <strong className="text-slate-800">
+                    {deleteTarget.number}
+                  </strong>
+                  ? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={deleteQuotation}
+                disabled={deleting}
+                className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deleting ? "Deleting..." : "Delete quotation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mx-auto grid max-w-[1200px] min-w-0 grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         {/* FORM */}

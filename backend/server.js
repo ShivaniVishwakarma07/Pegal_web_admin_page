@@ -8,6 +8,7 @@ import projectRoutes from "./routes/projects.js";
 import invoiceRoutes from "./routes/invoices.js";
 import hostingRoutes from "./routes/hosting.js";
 import quotationRoutes from "./routes/quotations.js";
+import settingsRoutes from "./routes/settings.js";
 
 dotenv.config();
 
@@ -22,7 +23,7 @@ app.use(
   }),
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/clients", clientRoutes);
@@ -30,6 +31,7 @@ app.use("/api/projects", projectRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/hosting", hostingRoutes);
 app.use("/api/quotations", quotationRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.get("/", (req, res) => {
   res.json({
