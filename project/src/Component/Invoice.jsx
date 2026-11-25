@@ -311,7 +311,7 @@ export default function Invoice({ onSave }) {
       return "Add at least one item with a price.";
     }
 
-    if (meta.due < meta.issue) {
+    if (meta.status !== "Paid" && meta.due < meta.issue) {
       return "The due date cannot be before the issue date.";
     }
 
@@ -760,7 +760,10 @@ export default function Invoice({ onSave }) {
       return flash("err", "Enter a valid WhatsApp number.");
     }
 
-    const text = `Hello ${client.name}, here is invoice ${meta.number} from ${business.name} for ${inr(t.total)}. Due date: ${fmtDate(meta.due)}.${pay.upi ? ` Pay via UPI: ${pay.upi}.` : ""} Thank you.`;
+    const dueText =
+      meta.status !== "Paid" ? ` Due date: ${fmtDate(meta.due)}.` : "";
+
+    const text = `Hello ${client.name}, here is invoice ${meta.number} from ${business.name} for ${inr(t.total)}.${dueText}${pay.upi ? ` Pay via UPI: ${pay.upi}.` : ""} Thank you.`;
 
     window.open(
       `https://wa.me/${p}?text=${encodeURIComponent(text)}`,
@@ -782,6 +785,9 @@ export default function Invoice({ onSave }) {
 
     const subject = `Invoice ${meta.number} - ${business.name}`;
 
+    const dueLine =
+      meta.status !== "Paid" ? `Due Date: ${fmtDate(meta.due)}\n` : "";
+
     const body = `Hello ${client.name},
 
 Please find the invoice details below:
@@ -789,8 +795,7 @@ Please find the invoice details below:
 Invoice Number: ${meta.number}
 Amount: ${inr(t.total)}
 Issue Date: ${fmtDate(meta.issue)}
-Due Date: ${fmtDate(meta.due)}
-
+${dueLine}
 Thank you,
 ${business.name}`;
 
@@ -970,38 +975,40 @@ ${business.name}`;
                 />
               </Field>
 
-              <Field label="Due date">
-                <input
-                  type="date"
-                  min={meta.issue}
-                  className={input}
-                  value={meta.due ? meta.due.slice(0, 10) : ""}
-                  onChange={(e) =>
-                    setMeta({
-                      ...meta,
-                      due: e.target.value,
-                    })
-                  }
-                />
+              {meta.status !== "Paid" && (
+                <Field label="Due date">
+                  <input
+                    type="date"
+                    min={meta.issue}
+                    className={input}
+                    value={meta.due ? meta.due.slice(0, 10) : ""}
+                    onChange={(e) =>
+                      setMeta({
+                        ...meta,
+                        due: e.target.value,
+                      })
+                    }
+                  />
 
-                <div className="mt-2 flex gap-1.5">
-                  {[7, 15, 30].map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() =>
-                        setMeta({
-                          ...meta,
-                          due: addDays(meta.issue, d),
-                        })
-                      }
-                      className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                    >
-                      Net {d}
-                    </button>
-                  ))}
-                </div>
-              </Field>
+                  <div className="mt-2 flex gap-1.5">
+                    {[7, 15, 30].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() =>
+                          setMeta({
+                            ...meta,
+                            due: addDays(meta.issue, d),
+                          })
+                        }
+                        className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                      >
+                        Net {d}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+              )}
             </div>
           </Card>
 
@@ -1456,9 +1463,11 @@ ${business.name}`;
                       Issued {fmtDate(meta.issue)}
                     </p>
 
-                    <p className="text-xs text-slate-500">
-                      Due {fmtDate(meta.due)}
-                    </p>
+                    {meta.status !== "Paid" && (
+                      <p className="text-xs text-slate-500">
+                        Due {fmtDate(meta.due)}
+                      </p>
+                    )}
                   </div>
                 </div>
 

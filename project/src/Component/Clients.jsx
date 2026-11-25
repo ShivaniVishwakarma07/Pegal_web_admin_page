@@ -366,7 +366,6 @@ function InvoiceList({ client, invoices, onClose }) {
           <div className="space-y-3">
             {invoices.map((invoice, index) => {
               const due = getDue(invoice);
-
               const status = String(invoice.status || "").toLowerCase();
 
               let displayStatus = "Unpaid";
@@ -421,7 +420,6 @@ function InvoiceList({ client, invoices, onClose }) {
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div>
                       <p className="text-slate-400">Total</p>
-
                       <p className="mt-1 font-semibold">
                         {money(invoice.total)}
                       </p>
@@ -429,7 +427,6 @@ function InvoiceList({ client, invoices, onClose }) {
 
                     <div>
                       <p className="text-slate-400">Received</p>
-
                       <p className="mt-1 font-semibold text-emerald-700">
                         {money(getPaid(invoice))}
                       </p>
@@ -437,7 +434,6 @@ function InvoiceList({ client, invoices, onClose }) {
 
                     <div>
                       <p className="text-slate-400">Balance</p>
-
                       <p className="mt-1 font-semibold text-rose-600">
                         {money(due)}
                       </p>
@@ -504,9 +500,61 @@ export default function Clients() {
   const [viewing, setViewing] = useState(null);
 
   const [editingClient, setEditingClient] = useState(null);
+  const [newClient, setNewClient] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [savingClient, setSavingClient] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
+
+  const createClient = async () => {
+    if (!newClient?.name?.trim()) {
+      setActionMessage("Client name is required.");
+      return;
+    }
+
+    try {
+      setSavingClient(true);
+      setActionMessage("");
+
+      const response = await fetch(`${API_URL}/api/clients`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: String(newClient.name || "").trim(),
+          company: String(newClient.company || "").trim(),
+          email: String(newClient.email || "").trim(),
+          phone: String(newClient.phone || "").trim(),
+          address: String(newClient.address || "").trim(),
+          gstin: String(newClient.gstin || "").trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to create client");
+      }
+
+      const clientsResponse = await fetch(`${API_URL}/api/clients`);
+
+      if (clientsResponse.ok) {
+        const clients = await clientsResponse.json();
+        setClientsData(Array.isArray(clients) ? clients : []);
+      }
+
+      setNewClient(null);
+      setActionMessage("Client added successfully.");
+
+      setTimeout(() => {
+        setActionMessage("");
+      }, 3000);
+    } catch (error) {
+      setActionMessage(error.message || "Failed to create client");
+    } finally {
+      setSavingClient(false);
+    }
+  };
 
   const updateClient = async () => {
     const clientId = editingClient?.mongoId;
@@ -652,10 +700,12 @@ export default function Clients() {
   useEffect(() => {
     const refresh = async () => {
       try {
-        const [invoicesResponse, expensesResponse] = await Promise.all([
-          fetch(`${API_URL}/api/invoices`),
-          fetch(`${API_URL}/api/expenses`),
-        ]);
+        const [invoicesResponse, expensesResponse, clientsResponse] =
+          await Promise.all([
+            fetch(`${API_URL}/api/invoices`),
+            fetch(`${API_URL}/api/expenses`),
+            fetch(`${API_URL}/api/clients`),
+          ]);
 
         if (invoicesResponse.ok) {
           const data = await invoicesResponse.json();
@@ -665,6 +715,11 @@ export default function Clients() {
         if (expensesResponse.ok) {
           const data = await expensesResponse.json();
           setExpenses(Array.isArray(data) ? data : []);
+        }
+
+        if (clientsResponse.ok) {
+          const data = await clientsResponse.json();
+          setClientsData(Array.isArray(data) ? data : []);
         }
       } catch {
         return;
@@ -683,7 +738,6 @@ export default function Clients() {
 
     invoices.forEach((invoice) => {
       const source = invoice?.client || {};
-
       const name = String(source.name || invoice.clientName || "").trim();
 
       if (!name) return;
@@ -710,9 +764,7 @@ export default function Clients() {
     return clientsData
       .map((source) => {
         const name = String(source.name || "").trim();
-
         const id = String(source._id || name).toLowerCase();
-
         const invoiceInfo = invoiceClients.get(id);
 
         return {
@@ -901,7 +953,7 @@ export default function Clients() {
 
   return (
     <div className="min-w-0 space-y-6 text-slate-900">
-      <section className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
             Clients
@@ -912,13 +964,30 @@ export default function Clients() {
             invoices.
           </p>
         </div>
+
+        <button
+          onClick={() =>
+            setNewClient({
+              name: "",
+              company: "",
+              email: "",
+              phone: "",
+              address: "",
+              gstin: "",
+            })
+          }
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#002F5F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#003b78]"
+        >
+          <UserPlus size={16} />
+          Add Client
+        </button>
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           title="Total clients"
           value={String(clients.length)}
-          note="Unique invoice clients"
+          note="Saved clients"
           icon={Users}
           tone="bg-blue-50 text-blue-600"
         />
@@ -1220,19 +1289,19 @@ export default function Clients() {
           <Users size={28} className="mx-auto text-slate-400" />
 
           <p className="mt-4 font-semibold text-slate-800">
-            {invoices.length ? "No matching clients" : "No invoices found"}
+            {invoices.length ? "No matching clients" : "No clients found"}
           </p>
 
           <p className="mt-1 text-sm text-slate-500">
             {invoices.length
               ? "Try another search or month."
-              : "Create an invoice with a client name. The client will appear here automatically."}
+              : "Click Add Client to create your first client."}
           </p>
         </section>
       )}
 
       <footer className="border-t border-slate-200 py-4 text-xs text-slate-400">
-        Showing {rows.length} of {clients.length} invoice clients
+        Showing {rows.length} of {clients.length} clients
       </footer>
 
       {viewing && (
@@ -1241,6 +1310,161 @@ export default function Clients() {
           invoices={invoicesForClient(viewing)}
           onClose={() => setViewing(null)}
         />
+      )}
+
+      {newClient && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Add Client</h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Add a client for use in invoices.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setNewClient(null)}
+                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+              >
+                <X size={19} />
+              </button>
+            </div>
+
+            <div className="max-h-[75vh] space-y-4 overflow-y-auto px-6 py-5">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Name
+                </label>
+
+                <input
+                  value={newClient.name}
+                  onChange={(e) =>
+                    setNewClient({
+                      ...newClient,
+                      name: e.target.value,
+                    })
+                  }
+                  placeholder="Client name"
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Company
+                </label>
+
+                <input
+                  value={newClient.company}
+                  onChange={(e) =>
+                    setNewClient({
+                      ...newClient,
+                      company: e.target.value,
+                    })
+                  }
+                  placeholder="Company name"
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                    Email
+                  </label>
+
+                  <input
+                    type="email"
+                    value={newClient.email}
+                    onChange={(e) =>
+                      setNewClient({
+                        ...newClient,
+                        email: e.target.value,
+                      })
+                    }
+                    placeholder="client@email.com"
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                    Phone
+                  </label>
+
+                  <input
+                    value={newClient.phone}
+                    onChange={(e) =>
+                      setNewClient({
+                        ...newClient,
+                        phone: e.target.value,
+                      })
+                    }
+                    placeholder="Phone number"
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  Address
+                </label>
+
+                <textarea
+                  rows={3}
+                  value={newClient.address}
+                  onChange={(e) =>
+                    setNewClient({
+                      ...newClient,
+                      address: e.target.value,
+                    })
+                  }
+                  placeholder="Billing address"
+                  className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                  GSTIN
+                </label>
+
+                <input
+                  value={newClient.gstin}
+                  onChange={(e) =>
+                    setNewClient({
+                      ...newClient,
+                      gstin: e.target.value,
+                    })
+                  }
+                  placeholder="GSTIN"
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 px-6 py-4">
+              <button
+                onClick={() => setNewClient(null)}
+                disabled={savingClient}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={createClient}
+                disabled={savingClient || !newClient.name.trim()}
+                className="rounded-xl bg-[#002F5F] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#003b78] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingClient ? "Adding..." : "Add Client"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {editingClient && (
