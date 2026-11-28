@@ -152,7 +152,7 @@ const Card = ({ title, hint, children }) => (
 
 export default function Invoice({ onSave }) {
   const [meta, setMeta] = useState(() => ({
-    number: "INV-1",
+    number: "",
     issue: today(),
     due: addDays(today(), 7),
     status: "Unpaid",
@@ -185,7 +185,7 @@ export default function Invoice({ onSave }) {
   ]);
 
   const [discount, setDiscount] = useState(0);
-  const [discountType, setDiscountType] = useState("flat");
+  const [discountType, setDiscountType] = useState("percent");
   const [gstOn, setGstOn] = useState(true);
   const [supply, setSupply] = useState("intra");
   const [msg, setMsg] = useState(null);
@@ -244,6 +244,18 @@ export default function Invoice({ onSave }) {
   useEffect(() => {
     loadInvoices();
   }, []);
+  useEffect(() => {
+    const loadNextInvoiceNumber = async () => {
+      const number = await generateInvoiceNumber();
+
+      setMeta((prev) => ({
+        ...prev,
+        number,
+      }));
+    };
+
+    loadNextInvoiceNumber();
+  }, []);
 
   const t = useMemo(() => {
     const lines = items.map((i) => ({
@@ -253,12 +265,7 @@ export default function Invoice({ onSave }) {
 
     const sub = lines.reduce((s, l) => s + l.amount, 0);
 
-    const disc = Math.min(
-      sub,
-      discountType === "percent"
-        ? (sub * Math.min(100, num(discount))) / 100
-        : num(discount),
-    );
+    const disc = Math.min(sub, (sub * Math.min(100, num(discount))) / 100);
 
     const factor = sub ? (sub - disc) / sub : 0;
     const taxable = sub - disc;
@@ -311,8 +318,8 @@ export default function Invoice({ onSave }) {
       return "Add at least one item with a price.";
     }
 
-    if (meta.status !== "Paid" && meta.due < meta.issue) {
-      return "The due date cannot be before the issue date.";
+    if (meta.status !== "Paid" && meta.due < today()) {
+      return "The due date cannot be before today.";
     }
 
     return null;
@@ -324,9 +331,11 @@ export default function Invoice({ onSave }) {
     setTimeout(() => setMsg(null), 3500);
   };
 
-  const resetInvoice = () => {
+  const resetInvoice = async () => {
+    const nextInvoiceNumber = await generateInvoiceNumber();
+
     setMeta({
-      number: "INV-1",
+      number: nextInvoiceNumber,
       issue: today(),
       due: addDays(today(), 7),
       status: "Unpaid",
@@ -344,17 +353,16 @@ export default function Invoice({ onSave }) {
 
     setItems([
       {
-        id: 1,
-        description: "Website design and development",
-        hsn: "9983",
+        id: Date.now(),
+        description: "",
         qty: 1,
-        price: 15000,
+        price: 0,
         gst: 18,
       },
     ]);
 
     setDiscount(0);
-    setDiscountType("flat");
+    setDiscountType("percent");
     setGstOn(true);
     setSupply("intra");
     setSavedInvoiceId(null);
@@ -413,7 +421,6 @@ export default function Invoice({ onSave }) {
               {
                 id: Date.now(),
                 description: "",
-                hsn: "9983",
                 qty: 1,
                 price: 0,
                 gst: 18,
@@ -422,7 +429,7 @@ export default function Invoice({ onSave }) {
       );
 
       setDiscount(data.discount || 0);
-      setDiscountType("flat");
+      setDiscountType("percent");
       setGstOn(data.gstOn !== false);
       setSupply(data.supply || "intra");
       setRefunds(data.refunds || []);
@@ -602,24 +609,27 @@ export default function Invoice({ onSave }) {
 
       onSave?.(data);
 
-      setSavedInvoiceId(data._id);
-
-      setRefunds(data.refunds || []);
-
-      setMeta((prev) => ({
-        ...prev,
-        number: data.number || invoiceNumber,
-        status: data.status || prev.status,
-      }));
-
       await loadInvoices();
 
-      flash(
-        "ok",
-        savedInvoiceId
-          ? `Invoice ${data.number || invoiceNumber} updated.`
-          : `Invoice ${data.number || invoiceNumber} saved.`,
-      );
+      if (savedInvoiceId) {
+        setSavedInvoiceId(data._id);
+        setRefunds(data.refunds || []);
+
+        setMeta((prev) => ({
+          ...prev,
+          number: data.number || invoiceNumber,
+          status: data.status || prev.status,
+        }));
+
+        flash("ok", `Invoice ${data.number || invoiceNumber} updated.`);
+      } else {
+        await resetInvoice();
+
+        flash(
+          "ok",
+          `Invoice ${data.number || invoiceNumber} saved. New invoice form is ready.`,
+        );
+      }
     } catch (error) {
       flash("err", error.message || "Failed to save invoice");
     } finally {
@@ -794,7 +804,6 @@ Please find the invoice details below:
 
 Invoice Number: ${meta.number}
 Amount: ${inr(t.total)}
-Issue Date: ${fmtDate(meta.issue)}
 ${dueLine}
 Thank you,
 ${business.name}`;
@@ -917,17 +926,11 @@ ${business.name}`;
           <Card title="Invoice details">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Invoice number">
-                <input
-                  className={input}
-                  value={meta.number}
-                  disabled={!!savedInvoiceId}
-                  onChange={(e) =>
-                    setMeta({
-                      ...meta,
-                      number: e.target.value,
-                    })
-                  }
-                />
+                <div
+                  className={`${input} bg-slate-50 font-semibold text-slate-700`}
+                >
+                  {meta.number}
+                </div>
               </Field>
 
               <Field label="Status">
@@ -961,25 +964,11 @@ ${business.name}`;
                 </select>
               </Field>
 
-              <Field label="Issue date">
-                <input
-                  type="date"
-                  className={input}
-                  value={meta.issue ? meta.issue.slice(0, 10) : ""}
-                  onChange={(e) =>
-                    setMeta({
-                      ...meta,
-                      issue: e.target.value,
-                    })
-                  }
-                />
-              </Field>
-
               {meta.status !== "Paid" && (
                 <Field label="Due date">
                   <input
                     type="date"
-                    min={meta.issue}
+                    min={today()}
                     className={input}
                     value={meta.due ? meta.due.slice(0, 10) : ""}
                     onChange={(e) =>
@@ -998,7 +987,7 @@ ${business.name}`;
                         onClick={() =>
                           setMeta({
                             ...meta,
-                            due: addDays(meta.issue, d),
+                            due: addDays(today(), d),
                           })
                         }
                         className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
@@ -1165,17 +1154,6 @@ ${business.name}`;
                       />
                     </Field>
 
-                    <Field
-                      label="HSN / SAC"
-                      className="col-span-2 sm:col-span-2"
-                    >
-                      <input
-                        className={input}
-                        value={i.hsn}
-                        onChange={(e) => setItem(i.id, "hsn", e.target.value)}
-                      />
-                    </Field>
-
                     <Field label="Qty">
                       <input
                         type="number"
@@ -1241,7 +1219,6 @@ ${business.name}`;
                   {
                     id: Date.now(),
                     description: "",
-                    hsn: "9983",
                     qty: 1,
                     price: 0,
                     gst: 18,
@@ -1266,14 +1243,9 @@ ${business.name}`;
                     onChange={(e) => setDiscount(e.target.value)}
                   />
 
-                  <select
-                    className={`${input} w-28 shrink-0`}
-                    value={discountType}
-                    onChange={(e) => setDiscountType(e.target.value)}
-                  >
-                    <option value="flat">₹ flat</option>
-                    <option value="percent">% off</option>
-                  </select>
+                  <div className="flex w-28 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm font-semibold text-slate-600">
+                    % off
+                  </div>
                 </div>
               </Field>
 
@@ -1459,10 +1431,6 @@ ${business.name}`;
                       {meta.number}
                     </p>
 
-                    <p className="text-xs text-slate-500">
-                      Issued {fmtDate(meta.issue)}
-                    </p>
-
                     {meta.status !== "Paid" && (
                       <p className="text-xs text-slate-500">
                         Due {fmtDate(meta.due)}
@@ -1539,12 +1507,6 @@ ${business.name}`;
                             <span className="font-medium text-slate-900">
                               {l.description || "Item"}
                             </span>
-
-                            {l.hsn && (
-                              <span className="block text-[11px] text-slate-400">
-                                HSN/SAC {l.hsn}
-                              </span>
-                            )}
                           </td>
 
                           <td className="px-2 py-2.5 text-right">
